@@ -1,0 +1,5 @@
+cargo:rustc-cfg=feature="since_1_10_0"
+cargo:rustc-cfg=feature="since_1_15_0"
+cargo:rustc-cfg=feature="since_1_27_0"
+cargo:rustc-cfg=feature="since_1_34_0"
+cargo:rustc-cfg=feature="since_1_45_0"
