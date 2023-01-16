@@ -1,11 +1,11 @@
-use super::UPCALLS;
+use crate::PyPy;
+use crate::SINGLETON;
+use crate::UPCALLS;
 use mmtk::util::opaque_pointer::*;
 use mmtk::vm::ActivePlan;
 use mmtk::Mutator;
 use mmtk::Plan;
 use std::sync::Mutex;
-use SINGLETON;
-use PyPy;
 
 pub struct VMActivePlan {}
 
@@ -44,7 +44,7 @@ impl ActivePlan<PyPy> for VMActivePlan {
     }
 
     fn number_of_mutators() -> usize {
-        unimplemented!()
+        unsafe { ((*UPCALLS).number_of_mutators)() }
     }
 }
 

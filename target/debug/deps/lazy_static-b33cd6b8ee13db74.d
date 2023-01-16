@@ -1,8 +1,0 @@
-/home/captain/projects/mmtk-pypy/mmtk/target/debug/deps/lazy_static-b33cd6b8ee13db74.rmeta: /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/lib.rs /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/inline_lazy.rs
-
-/home/captain/projects/mmtk-pypy/mmtk/target/debug/deps/liblazy_static-b33cd6b8ee13db74.rlib: /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/lib.rs /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/inline_lazy.rs
-
-/home/captain/projects/mmtk-pypy/mmtk/target/debug/deps/lazy_static-b33cd6b8ee13db74.d: /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/lib.rs /home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/inline_lazy.rs
-
-/home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/lib.rs:
-/home/captain/.cargo/registry/src/github.com-1ecc6299db9ec823/lazy_static-1.4.0/src/inline_lazy.rs:

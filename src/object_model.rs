@@ -1,121 +1,108 @@
-use std::sync::atomic::Ordering;
-
-use super::UPCALLS;
+use crate::abi::Oop;
+use crate::UPCALLS;
+use crate::{vm_metadata, PyPy};
+use mmtk::util::alloc::fill_alignment_gap;
 use mmtk::util::copy::*;
-use mmtk::util::metadata::header_metadata::HeaderMetadataSpec;
 use mmtk::util::{Address, ObjectReference};
 use mmtk::vm::*;
-use PyPy;
 
 pub struct VMObjectModel {}
 
 impl ObjectModel<PyPy> for VMObjectModel {
-    // FIXME: Use proper specs
-    const GLOBAL_LOG_BIT_SPEC: VMGlobalLogBitSpec = VMGlobalLogBitSpec::in_header(0);
+    const GLOBAL_LOG_BIT_SPEC: VMGlobalLogBitSpec = vm_metadata::LOGGING_SIDE_METADATA_SPEC;
+
     const LOCAL_FORWARDING_POINTER_SPEC: VMLocalForwardingPointerSpec =
-        VMLocalForwardingPointerSpec::in_header(0);
+        vm_metadata::FORWARDING_POINTER_METADATA_SPEC;
     const LOCAL_FORWARDING_BITS_SPEC: VMLocalForwardingBitsSpec =
-        VMLocalForwardingBitsSpec::in_header(0);
-    const LOCAL_MARK_BIT_SPEC: VMLocalMarkBitSpec = VMLocalMarkBitSpec::in_header(0);
-    const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec =
-        VMLocalLOSMarkNurserySpec::in_header(0);
+        vm_metadata::FORWARDING_BITS_METADATA_SPEC;
+    const LOCAL_MARK_BIT_SPEC: VMLocalMarkBitSpec = vm_metadata::MARKING_METADATA_SPEC;
+    const LOCAL_LOS_MARK_NURSERY_SPEC: VMLocalLOSMarkNurserySpec = vm_metadata::LOS_METADATA_SPEC;
 
-    fn load_metadata(
-        _metadata_spec: &HeaderMetadataSpec,
-        _object: ObjectReference,
-        _mask: Option<usize>,
-        _atomic_ordering: Option<Ordering>,
-    ) -> usize {
-        unimplemented!()
-    }
+    const UNIFIED_OBJECT_REFERENCE_ADDRESS: bool = true;
+    const OBJECT_REF_OFFSET_LOWER_BOUND: isize = 0;
 
-    fn store_metadata(
-        _metadata_spec: &HeaderMetadataSpec,
-        _object: ObjectReference,
-        _val: usize,
-        _mask: Option<usize>,
-        _atomic_ordering: Option<Ordering>,
-    ) {
-        unimplemented!()
-    }
-
-    fn compare_exchange_metadata(
-        _metadata_spec: &HeaderMetadataSpec,
-        _object: ObjectReference,
-        _old_val: usize,
-        _new_val: usize,
-        _mask: Option<usize>,
-        _success_order: Ordering,
-        _failure_order: Ordering,
-    ) -> bool {
-        unimplemented!()
-    }
-
-    fn fetch_add_metadata(
-        _metadata_spec: &HeaderMetadataSpec,
-        _object: ObjectReference,
-        _val: usize,
-        _order: Ordering,
-    ) -> usize {
-        unimplemented!()
-    }
-
-    fn fetch_sub_metadata(
-        _metadata_spec: &HeaderMetadataSpec,
-        _object: ObjectReference,
-        _val: usize,
-        _order: Ordering,
-    ) -> usize {
-        unimplemented!()
-    }
-
+    #[inline]
     fn copy(
-        _from: ObjectReference,
-        _allocator: CopySemantics,
-        _copy_context: &mut GCWorkerCopyContext<PyPy>,
+        from: ObjectReference,
+        copy: CopySemantics,
+        copy_context: &mut GCWorkerCopyContext<PyPy>,
     ) -> ObjectReference {
-        unimplemented!()
+        let bytes = unsafe { Oop::from(from).size() };
+        let dst = copy_context.alloc_copy(from, bytes, ::std::mem::size_of::<usize>(), 0, copy);
+        // Copy
+        let src = from.to_raw_address();
+        unsafe { std::ptr::copy_nonoverlapping::<u8>(src.to_ptr(), dst.to_mut_ptr(), bytes) }
+        let to_obj = ObjectReference::from_raw_address(dst);
+        copy_context.post_copy(to_obj, bytes, copy);
+        to_obj
     }
 
-    fn copy_to(_from: ObjectReference, _to: ObjectReference, _region: Address) -> Address {
-        unimplemented!()
+    fn copy_to(from: ObjectReference, to: ObjectReference, region: Address) -> Address {
+        let need_copy = from != to;
+        let bytes = unsafe { ((*UPCALLS).get_object_size)(from) };
+        if need_copy {
+            // copy obj to target
+            let dst = to.to_raw_address();
+            // Copy
+            let src = from.to_raw_address();
+            for i in 0..bytes {
+                unsafe { (dst + i).store((src + i).load::<u8>()) };
+            }
+        }
+        let start = Self::ref_to_object_start(to);
+        if region != Address::ZERO {
+            fill_alignment_gap::<PyPy>(region, start);
+        }
+        start + bytes
     }
 
-    fn get_reference_when_copied_to(_from: ObjectReference, _to: Address) -> ObjectReference {
-        unimplemented!()
+    fn get_reference_when_copied_to(_from: ObjectReference, to: Address) -> ObjectReference {
+        ObjectReference::from_raw_address(to)
     }
 
-    fn get_current_size(_object: ObjectReference) -> usize {
-        unimplemented!()
+    fn get_current_size(object: ObjectReference) -> usize {
+        unsafe { Oop::from(object).size() }
     }
 
-    fn get_size_when_copied(_object: ObjectReference) -> usize {
-        unimplemented!()
+    fn get_size_when_copied(object: ObjectReference) -> usize {
+        Self::get_current_size(object)
     }
 
     fn get_align_when_copied(_object: ObjectReference) -> usize {
-        unimplemented!()
+        ::std::mem::size_of::<usize>()
     }
 
     fn get_align_offset_when_copied(_object: ObjectReference) -> isize {
-        unimplemented!()
+        0
     }
 
     fn get_type_descriptor(_reference: ObjectReference) -> &'static [i8] {
         unimplemented!()
     }
 
-    fn object_start_ref(object: ObjectReference) -> Address {
-        object.to_address()
+    #[inline(always)]
+    fn ref_to_object_start(object: ObjectReference) -> Address {
+        object.to_raw_address()
+    }
+
+    #[inline(always)]
+    fn ref_to_address(object: ObjectReference) -> Address {
+        object.to_raw_address()
+    }
+
+    #[inline(always)]
+    fn ref_to_header(object: ObjectReference) -> Address {
+        object.to_raw_address()
+    }
+
+    #[inline(always)]
+    fn address_to_ref(address: Address) -> ObjectReference {
+        ObjectReference::from_raw_address(address)
     }
 
     fn dump_object(object: ObjectReference) {
         unsafe {
             ((*UPCALLS).dump_object)(object);
         }
-    }
-
-    fn ref_to_address(_object: ObjectReference) -> Address {
-        unimplemented!()
     }
 }

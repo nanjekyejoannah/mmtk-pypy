@@ -1,39 +1,67 @@
 [package]
 name = "mmtk_pypy"
-version = "0.10.0"
+version = "0.16.0"
 authors = [" <>"]
+rust-version = "1.57.0"
+edition = "2021"
 
 [lib]
-name = "mmtk_pypy"
+name = "mmtk_openjdk"
 # be careful - LTO is only allowed for certain crate types
-# crate-type = ["cdylib"]
-crate-type = ["dylib"]
+crate-type = ["cdylib"]
 
 [profile.release]
 lto = true
 
-[package.metadata.pypy]
-pypy_repo = "https://foss.heptapod.net/pypy/pypy"
-pypy_version = "67d5d2b16aacb2ea948552fab2323ebd0abbe924"
+# Metadata for the OpenJDK repository
+[package.metadata.openjdk]
+# Our CI matches the following line and extract mmtk/openjdk. If this line is updated, please check ci yaml files and make sure it works.
+openjdk_repo = "https://github.com/mmtk/openjdk.git"
+openjdk_version = "c82e5c44adced4383162826c2c3933a83cfb139b"
 
 [dependencies]
 libc = "0.2"
 lazy_static = "1.1"
-log = "*"
-
+once_cell = "1.10.0"
 # Be very careful to commit any changes to the following mmtk dependency, as our CI scripts (including mmtk-core CI)
 # rely on matching these lines to modify them: e.g. comment out the git dependency and use the local path.
 # These changes are safe:
 # - change branch
 # - change repo name
 # But other changes including adding/removing whitespaces in commented lines may break the CI.
-mmtk = { git = "https://github.com/mmtk/mmtk-core.git", rev = "dbd152b29ff54c3f028318e73ac182d681deda9a" }
-# Uncomment the following and fix the path to mmtk-core to build locally
-#mmtk = { path = "../repos/mmtk-core" }
+mmtk = { git = "https://github.com/mmtk/mmtk-core.git", rev = "2300ce1d4a7c99053c5bb7055b377a71c9241e85" }
+# Uncomment the following to build locally
+# mmtk = { path = "../repos/mmtk-core" }
+
+[build-dependencies]
+built = { version = "0.5.1", features = ["git2"] }
 
 [features]
-default = ["mmtk/code_space", "mmtk/ro_space"]
+default = []
+mmtk_extreme_assertions = ["mmtk/extreme_assertions"]
+nogc_lock_free = ["mmtk/nogc_lock_free"]
+nogc_no_zeroing = ["mmtk/nogc_no_zeroing"]
+# Use the env var GLOBAL_ALLOC_BIT=1 when building OpenJDK so the fastpath for setting the alloc bit will be compiled in.
+# See README.
+global_alloc_bit = ["mmtk/global_alloc_bit"]
+
+# This compile time constant places the mark bit in the header of the object instead of on the side.
+mark_bit_in_header = []
+
+# Use malloc mark sweep - we should only run marksweep with this feature turned on.
+malloc_mark_sweep = ["mmtk/malloc_mark_sweep"]
+
+# We can select plan at runtime. So no need to use any of these features.
+# However, if any of these is provided during build-time, we will ignore any runtime flag and
+# always run this plan. Performance-wise there is no difference. The main reason for these features
+# is to temporarily allow running performance tests without changing performance scripts.
 nogc = []
+semispace = []
+gencopy = []
+marksweep = []
+pageprotect = []
+immix = []
+
 
 # Create the header file
-# cd /path/to/my/project && cbindgen . -o target/mmtk.h
+# cd src && cbindgen . -o target/mmtk.h

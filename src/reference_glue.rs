@@ -1,23 +1,26 @@
-use mmtk::util::opaque_pointer::*;
+use crate::abi::{InstanceRefKlass, Oop};
+use crate::PyPy;
+use crate::UPCALLS;
+use mmtk::util::opaque_pointer::VMWorkerThread;
 use mmtk::util::ObjectReference;
 use mmtk::vm::ReferenceGlue;
-use mmtk::TraceLocal;
-use PyPy;
 
 pub struct VMReferenceGlue {}
 
 impl ReferenceGlue<PyPy> for VMReferenceGlue {
-    fn set_referent(_reff: ObjectReference, _referent: ObjectReference) {
-        unimplemented!()
+    type FinalizableType = ObjectReference;
+
+    fn set_referent(reff: ObjectReference, referent: ObjectReference) {
+        let oop = Oop::from(reff);
+        unsafe { InstanceRefKlass::referent_address(oop).store(referent) };
     }
-    fn get_referent(_object: ObjectReference) -> ObjectReference {
-        unimplemented!()
+    fn get_referent(object: ObjectReference) -> ObjectReference {
+        let oop = Oop::from(object);
+        unsafe { InstanceRefKlass::referent_address(oop).load::<ObjectReference>() }
     }
-    fn process_reference<T: TraceLocal>(
-        _trace: &mut T,
-        _reference: ObjectReference,
-        _tls: VMWorkerThread,
-    ) -> ObjectReference {
-        unimplemented!()
+    fn enqueue_references(references: &[ObjectReference], _tls: VMWorkerThread) {
+        unsafe {
+            ((*UPCALLS).enqueue_references)(references.as_ptr(), references.len());
+        }
     }
 }

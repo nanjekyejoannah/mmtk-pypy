@@ -1,20 +1,52 @@
-use mmtk::scheduler::ProcessEdgesWork;
+use mmtk::util::alloc::AllocationError;
 use mmtk::util::opaque_pointer::*;
-use mmtk::vm::{Collection, GCThreadContext};
-use mmtk::MutatorContext;
+use mmtk::vm::{Collection, GCThreadContext, Scanning, VMBinding};
+use mmtk::{Mutator, MutatorContext};
 
-use UPCALLS;
-use PyPy;
+use crate::UPCALLS;
+use crate::{MutatorClosure, PyPy};
+
+pub struct VMCollection {}
+
+extern "C" fn report_mutator_stop<F>(
+    mutator: *mut Mutator<PyPy>,
+    callback_ptr: *mut libc::c_void,
+) where
+    F: FnMut(&'static mut Mutator<PyPy>),
+{
+    let callback: &mut F = unsafe { &mut *(callback_ptr as *mut F) };
+    callback(unsafe { &mut *mutator });
+}
+
+fn to_mutator_closure<F>(callback: &mut F) -> MutatorClosure
+where
+    F: FnMut(&'static mut Mutator<PyPy>),
+{
+    MutatorClosure {
+        func: report_mutator_stop::<F>,
+        data: callback as *mut F as *mut libc::c_void,
+    }
+}
 
 const GC_THREAD_KIND_CONTROLLER: libc::c_int = 0;
 const GC_THREAD_KIND_WORKER: libc::c_int = 1;
 
-pub struct VMCollection {}
-
 impl Collection<PyPy> for VMCollection {
-    fn stop_all_mutators<E: ProcessEdgesWork<VM = PyPy>>(tls: VMWorkerThread) {
+    const COORDINATOR_ONLY_STW: bool = false;
+
+    fn stop_all_mutators<F>(tls: VMWorkerThread, mut mutator_visitor: F)
+    where
+        F: FnMut(&'static mut Mutator<PyPy>),
+    {
+        let scan_mutators_in_safepoint =
+            <PyPy as VMBinding>::VMScanning::SCAN_MUTATORS_IN_SAFEPOINT;
+
         unsafe {
-            ((*UPCALLS).stop_all_mutators)(tls);
+            ((*UPCALLS).stop_all_mutators)(
+                tls,
+                scan_mutators_in_safepoint,
+                to_mutator_closure(&mut mutator_visitor),
+            );
         }
     }
 
@@ -32,12 +64,12 @@ impl Collection<PyPy> for VMCollection {
 
     fn spawn_gc_thread(tls: VMThread, ctx: GCThreadContext<PyPy>) {
         let (ctx_ptr, kind) = match ctx {
-            GCThreadContext::Controller(b) => (
-                Box::into_raw(b) as *mut libc::c_void,
+            GCThreadContext::Controller(c) => (
+                Box::into_raw(c) as *mut libc::c_void,
                 GC_THREAD_KIND_CONTROLLER,
             ),
-            GCThreadContext::Worker(b) => {
-                (Box::into_raw(b) as *mut libc::c_void, GC_THREAD_KIND_WORKER)
+            GCThreadContext::Worker(w) => {
+                (Box::into_raw(w) as *mut libc::c_void, GC_THREAD_KIND_WORKER)
             }
         };
         unsafe {
@@ -46,10 +78,22 @@ impl Collection<PyPy> for VMCollection {
     }
 
     fn prepare_mutator<T: MutatorContext<PyPy>>(
-        _tls_worker: VMWorkerThread,
-        _tls_mutator: VMMutatorThread,
+        _tls_w: VMWorkerThread,
+        _tls_m: VMMutatorThread,
         _m: &T,
     ) {
-        unimplemented!()
+        // unimplemented!()
+    }
+
+    fn out_of_memory(tls: VMThread, err_kind: AllocationError) {
+        unsafe {
+            ((*UPCALLS).out_of_memory)(tls, err_kind);
+        }
+    }
+
+    fn schedule_finalization(_tls: VMWorkerThread) {
+        unsafe {
+            ((*UPCALLS).schedule_finalizer)();
+        }
     }
 }
